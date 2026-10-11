@@ -1,0 +1,22 @@
+name: hawser
+
+services:
+  hawser:
+    container_name: hawser
+    image: ghcr.io/finsys/hawser:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      STACKS_DIR: ${STACKS_DIR}
+      AGENT_NAME: ${HOST_NAME}
+    ports:
+      # Standard mode: Dockhand connects in over Tailscale only
+      - "${TAILSCALE_IP:?set TAILSCALE_IP in .env}:2376:2376"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Must be the identical host path so relative bind mounts in stacks resolve correctly
+      - ${STACKS_DIR}:${STACKS_DIR}
+
+networks:
+  default:
+    name: hawser

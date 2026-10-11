@@ -1,0 +1,43 @@
+# pangolin-cli site connectors for ${HOST_NAME}
+# One service per Pangolin site. Site IDs/secrets live in .env next to this file (chmod 600).
+# Exactly ONE connector per host may mount the Docker socket: a socket-reading connector
+# applies Pangolin label blueprints into its own org.
+# This stack creates the shared `pangolin` network; app stacks join it as external.
+
+networks:
+  pangolin:
+    name: pangolin
+    driver: bridge
+
+x-site: &site
+  image: fosrl/pangolin-cli:latest
+  restart: unless-stopped
+  networks:
+    - pangolin
+  expose:
+    - "2112"
+  healthcheck:
+    test: ["CMD-SHELL", "[ -f /tmp/healthy ]"]
+    interval: 30s
+    timeout: 5s
+    start_period: 30s
+    retries: 3
+
+services:
+  # Copy this block per site; give each a short suffix (e.g. -wmc, -syr).
+  pangolin-site1:
+    <<: *site
+    container_name: site-${HOST_NAME}-site1
+    environment:
+      - PANGOLIN_ENDPOINT=${SITE1_ENDPOINT}
+      - SITE_ID=${SITE1_ID}
+      - SITE_SECRET=${SITE1_SECRET}
+      - HEALTH_FILE=/tmp/healthy
+      - LOG_LEVEL=INFO
+      - SITE_METRICS_PROMETHEUS_ENABLED=true
+      - SITE_ADMIN_ADDR=0.0.0.0:2112
+      - SITE_METRICS_ASYNC_BYTES=true
+      # Only on the ONE connector per host that should read Docker labels:
+      # - DOCKER_SOCKET=unix:///var/run/docker.sock
+    # volumes:
+    #   - /var/run/docker.sock:/var/run/docker.sock:ro
