@@ -9,7 +9,7 @@ Built from setting up `lattice` (2026-10). The full walkthrough lives in the *Ub
 On the new machine, as your normal user (not root):
 
 ```bash
-git clone <repo-url> ~/projects/server-bootstrap
+git clone https://github.com/formless63/server-bootstrap ~/projects/server-bootstrap
 ~/projects/server-bootstrap/bootstrap.sh
 ```
 
