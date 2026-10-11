@@ -14,6 +14,7 @@ REBOOT_TIME="${REBOOT_TIME:-03:00}"          # must fall in the 02:00-05:00 wind
 SUDO_NOPASSWD="${SUDO_NOPASSWD:-1}"          # needed for agents driven via Remote Control
 TS_AUTHKEY="${TS_AUTHKEY:-}"                 # optional; otherwise `tailscale up` prints a login link
 INSTALL_CLAUDE="${INSTALL_CLAUDE:-1}"
+INSTALL_CODEX="${INSTALL_CODEX:-1}"
 DOCKER_FALLBACK_CODENAME="${DOCKER_FALLBACK_CODENAME:-noble}"
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,7 +24,7 @@ SKILLS_DIR="$HOME/.agents/skills"
 HOST_NAME="$(hostname -s)"
 LOG="$HOME/bootstrap-$(date +%Y%m%d-%H%M%S).log"
 
-PHASES=(survey sudo tools gh timezone laptop updates docker tailscale nonlocal layout hawser pangolin claude agentsmd verify)
+PHASES=(survey sudo tools gh timezone laptop updates docker tailscale nonlocal layout hawser pangolin agents agentsmd verify)
 
 # ---- Helpers ----
 c_bold=$'\e[1m'; c_green=$'\e[32m'; c_yellow=$'\e[33m'; c_red=$'\e[31m'; c_off=$'\e[0m'
@@ -245,12 +246,22 @@ phase_pangolin() {
   NOTES+=("Pangolin: add site IDs/secrets to $dir/.env, adjust sites in compose.yaml, then: docker compose up -d")
 }
 
-phase_claude() {
-  say "Claude Code"
-  if [[ "$INSTALL_CLAUDE" != 1 ]]; then ok "skipped (INSTALL_CLAUDE=0)"; return; fi
-  if command -v claude >/dev/null || [[ -x "$HOME/.local/bin/claude" ]]; then ok "already installed"; return; fi
-  if curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1; then ok "installed (run 'claude' in ~ to log in)"
-  else warn "Claude Code install failed; install it manually."; fi
+phase_agents() {
+  say "Coding agents: Claude Code + Codex"
+  if [[ "$INSTALL_CLAUDE" == 1 ]]; then
+    if command -v claude >/dev/null || [[ -x "$HOME/.local/bin/claude" ]]; then ok "Claude Code already installed"
+    elif curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1; then ok "Claude Code installed (run 'claude' in ~ to log in)"
+    else warn "Claude Code install failed; install it manually."; fi
+  else ok "Claude Code skipped (INSTALL_CLAUDE=0)"; fi
+  if [[ "$INSTALL_CODEX" == 1 ]]; then
+    if command -v codex >/dev/null || [[ -x "$HOME/.local/bin/codex" ]]; then ok "Codex already installed"
+    elif curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh >/dev/null 2>&1; then ok "Codex installed (run 'codex login')"
+    else warn "Codex install failed; install it manually."; fi
+    # Codex reads global instructions from ~/.codex/AGENTS.md; point it at the machine's AGENTS.md
+    mkdir -p "$HOME/.codex"
+    if [[ ! -e "$HOME/.codex/AGENTS.md" ]]; then ln -s "$HOME/AGENTS.md" "$HOME/.codex/AGENTS.md"; ok "linked ~/.codex/AGENTS.md -> ~/AGENTS.md"
+    else ok "~/.codex/AGENTS.md exists"; fi
+  else ok "Codex skipped (INSTALL_CODEX=0)"; fi
 }
 
 phase_agentsmd() {
@@ -350,7 +361,7 @@ phase_verify() {
 usage() {
   sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'
   echo; echo "Phases: ${PHASES[*]}"
-  echo "Env: TZ_NAME REBOOT_TIME SUDO_NOPASSWD TS_AUTHKEY INSTALL_CLAUDE DOCKER_FALLBACK_CODENAME"
+  echo "Env: TZ_NAME REBOOT_TIME SUDO_NOPASSWD TS_AUTHKEY INSTALL_CLAUDE INSTALL_CODEX DOCKER_FALLBACK_CODENAME"
 }
 SKIP=""; ONLY=""
 while [[ $# -gt 0 ]]; do

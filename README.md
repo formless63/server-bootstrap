@@ -34,11 +34,11 @@ Safe to re-run: each step checks the current state first, and existing `compose.
 | `layout` | `~/stacks`, `~/projects`, `~/.agents/skills` (+ `~/.claude/skills` symlink), syncs `skills/`, `~/CLAUDE.md` |
 | `hawser` | `~/stacks/hawser` in standard mode on `<tailscale-ip>:2376` with a fresh token, started |
 | `pangolin` | `~/stacks/pangolin-cli` template + `.env` (not started; needs site credentials) |
-| `claude` | Installs Claude Code |
+| `agents` | Installs Claude Code and Codex; links `~/.codex/AGENTS.md` to `~/AGENTS.md` |
 | `agentsmd` | Generates `~/AGENTS.md` from what it detected |
 | `verify` | Checks containers, Hawser health, auto-updates, failed units, firmware updates |
 
-Run part of it: `./bootstrap.sh --only docker,verify` or `./bootstrap.sh --skip claude`.
+Run part of it: `./bootstrap.sh --only docker,verify` or `./bootstrap.sh --skip agents`.
 
 ## Settings (environment variables)
 
@@ -49,6 +49,7 @@ Run part of it: `./bootstrap.sh --only docker,verify` or `./bootstrap.sh --skip 
 | `SUDO_NOPASSWD` | `1` |
 | `TS_AUTHKEY` | empty, so you approve a login link interactively |
 | `INSTALL_CLAUDE` | `1` |
+| `INSTALL_CODEX` | `1` |
 | `DOCKER_FALLBACK_CODENAME` | `noble`, used if Docker has no repo for a brand-new Ubuntu release yet |
 
 ## GitHub login and git identity (once per machine)
