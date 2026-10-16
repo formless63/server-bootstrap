@@ -13,6 +13,7 @@ TZ_NAME="${TZ_NAME:-America/New_York}"
 REBOOT_TIME="${REBOOT_TIME:-03:00}"          # must fall in the 02:00-05:00 window
 SUDO_NOPASSWD="${SUDO_NOPASSWD:-1}"          # needed for agents driven via Remote Control
 TS_AUTHKEY="${TS_AUTHKEY:-}"                 # optional; otherwise `tailscale up` prints a login link
+BOOTSTRAP_USER="${BOOTSTRAP_USER:-}"         # run as root: create/use this user, then re-run as them
 INSTALL_CLAUDE="${INSTALL_CLAUDE:-1}"
 INSTALL_CODEX="${INSTALL_CODEX:-1}"
 DOCKER_FALLBACK_CODENAME="${DOCKER_FALLBACK_CODENAME:-noble}"
@@ -67,19 +68,76 @@ phase_survey() {
   ip -br -4 addr | grep -Ev '^(lo|docker|br-|veth)' | sed 's/^/    /'
 }
 
-phase_sudo() {
-  say "Passwordless sudo"
-  local f="/etc/sudoers.d/$USER"
-  if [[ "$SUDO_NOPASSWD" != 1 ]]; then ok "skipped (SUDO_NOPASSWD=0)"; return; fi
+# Passwordless sudo for user $1 via /etc/sudoers.d/$1 (works as root or via sudo).
+write_sudoers() {
+  local u="$1" f="/etc/sudoers.d/$1"
   if sudo test -f "$f"; then
     sudo chmod 0440 "$f"; ok "$f exists (mode 0440)"
   else
     local tmp; tmp="$(mktemp)"
-    echo "$USER ALL=(ALL) NOPASSWD: ALL" > "$tmp"
+    echo "$u ALL=(ALL) NOPASSWD: ALL" > "$tmp"
     sudo visudo -cf "$tmp" >/dev/null || die "sudoers validation failed"
     sudo install -m 0440 -o root -g root "$tmp" "$f"; rm -f "$tmp"
     ok "created $f"
   fi
+}
+
+# Started as root (fresh VPS): create or reuse a normal user, give it sudo and root's
+# SSH keys, copy this repo into its ~/projects, then re-exec the script as that user.
+root_handoff() {
+  say "Running as root: handing off to a normal user"
+  local u="$BOOTSTRAP_USER" def
+  def="$(getent passwd 1000 | cut -d: -f1 || true)"
+  if [[ -z "$u" ]]; then
+    [[ -t 0 ]] || die "Running as root non-interactively: set BOOTSTRAP_USER=<name>."
+    read -rp "    Username to create/use${def:+ [$def]}: " u
+    u="${u:-$def}"
+  fi
+  [[ "$u" =~ ^[a-z_][a-z0-9_-]*$ && "$u" != root ]] || die "invalid username: '${u}'"
+
+  local keys=/root/.ssh/authorized_keys created=0
+  if id "$u" >/dev/null 2>&1; then ok "user $u exists"
+  else
+    adduser --disabled-password --gecos "" "$u" >/dev/null; created=1; ok "created user $u"
+  fi
+  usermod -aG sudo "$u"; ok "$u in sudo group"
+
+  local home; home="$(getent passwd "$u" | cut -d: -f6)"
+  if [[ -s "$keys" && ! -s "$home/.ssh/authorized_keys" ]]; then
+    install -d -m 0700 -o "$u" -g "$u" "$home/.ssh"
+    install -m 0600 -o "$u" -g "$u" "$keys" "$home/.ssh/authorized_keys"
+    ok "copied root's SSH keys to $home/.ssh/authorized_keys"
+  fi
+
+  # A new user needs a password if it has no other way in (no SSH key) or no NOPASSWD sudo.
+  if ((created)) && { [[ ! -s "$home/.ssh/authorized_keys" ]] || [[ "$SUDO_NOPASSWD" != 1 ]]; }; then
+    [[ -t 0 ]] || die "$u needs a password (no SSH key or SUDO_NOPASSWD=0); run interactively."
+    echo "    Set a password for $u:"; passwd "$u"
+  fi
+  if [[ "$SUDO_NOPASSWD" == 1 ]]; then write_sudoers "$u"; fi
+
+  local dest="$home/projects/server-bootstrap"
+  if [[ -e "$dest" ]]; then ok "$dest exists, using it as-is"
+  else
+    install -d -o "$u" -g "$u" "$home/projects"
+    cp -a "$REPO_DIR" "$dest"; chown -R "$u:$u" "$dest"
+    ok "copied repo to $dest"
+  fi
+
+  local vars=() v
+  for v in TZ_NAME REBOOT_TIME SUDO_NOPASSWD TS_AUTHKEY INSTALL_CLAUDE INSTALL_CODEX DOCKER_FALLBACK_CODENAME; do
+    vars+=("$v=${!v}")
+  done
+  say "Re-running as $u"
+  [[ "$dest" == "$REPO_DIR" ]] || echo "    (the root copy at $REPO_DIR is no longer needed)"
+  cd /
+  exec sudo -u "$u" -H env "${vars[@]}" "$dest/bootstrap.sh" "$@"
+}
+
+phase_sudo() {
+  say "Passwordless sudo"
+  if [[ "$SUDO_NOPASSWD" != 1 ]]; then ok "skipped (SUDO_NOPASSWD=0)"; return; fi
+  write_sudoers "$USER"
 }
 
 phase_tools() {
@@ -361,9 +419,9 @@ phase_verify() {
 usage() {
   sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'
   echo; echo "Phases: ${PHASES[*]}"
-  echo "Env: TZ_NAME REBOOT_TIME SUDO_NOPASSWD TS_AUTHKEY INSTALL_CLAUDE INSTALL_CODEX DOCKER_FALLBACK_CODENAME"
+  echo "Env: BOOTSTRAP_USER TZ_NAME REBOOT_TIME SUDO_NOPASSWD TS_AUTHKEY INSTALL_CLAUDE INSTALL_CODEX DOCKER_FALLBACK_CODENAME"
 }
-SKIP=""; ONLY=""
+ARGS=("$@"); SKIP=""; ONLY=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip) SKIP="$2"; shift 2 ;;
@@ -373,8 +431,8 @@ while [[ $# -gt 0 ]]; do
     *) die "unknown argument: $1 (see --help)" ;;
   esac
 done
-[[ $EUID -ne 0 ]] || die "Run as your normal user (the script uses sudo itself)."
 for p in ${SKIP//,/ } ${ONLY//,/ }; do [[ " ${PHASES[*]} " == *" $p "* ]] || die "unknown phase: $p"; done
+[[ $EUID -ne 0 ]] || root_handoff "${ARGS[@]}"
 
 exec > >(tee -a "$LOG") 2>&1
 echo "server-bootstrap on $HOST_NAME, $(date). Log: $LOG"

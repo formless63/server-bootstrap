@@ -13,6 +13,12 @@ git clone https://github.com/formless63/server-bootstrap ~/projects/server-boots
 ~/projects/server-bootstrap/bootstrap.sh
 ```
 
+**Fresh VPS with only root?** Run the same command as root. It asks for a username (or reads `BOOTSTRAP_USER`), creates that user or reuses an existing one, adds it to `sudo`, copies root's `authorized_keys`, copies the repo to the user's `~/projects/server-bootstrap`, then re-runs itself as that user with the same arguments and settings. It only asks you to set a password when the new user has no SSH key or `SUDO_NOPASSWD=0`. Afterwards, log in as the new user; the root copy can be deleted.
+
+```bash
+BOOTSTRAP_USER=will ~/projects/server-bootstrap/bootstrap.sh   # as root
+```
+
 It asks for your sudo password once, and prints a Tailscale login link to approve (or set `TS_AUTHKEY`). At the end it prints what's left to do by hand, including the Hawser URL and token to add in Dockhand.
 
 Safe to re-run: each step checks the current state first, and existing `compose.yaml`, `.env` and `AGENTS.md` files are never overwritten.
@@ -44,6 +50,7 @@ Run part of it: `./bootstrap.sh --only docker,verify` or `./bootstrap.sh --skip 
 
 | Variable | Default |
 | --- | --- |
+| `BOOTSTRAP_USER` | empty; only used when run as root (prompts if unset, defaulting to the UID 1000 user) |
 | `TZ_NAME` | `America/New_York` |
 | `REBOOT_TIME` | `03:00` (keep it within 02:00–05:00) |
 | `SUDO_NOPASSWD` | `1` |
